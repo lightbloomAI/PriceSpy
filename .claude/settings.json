@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/run-hook.sh",
-            "timeout": 2000
+            "command": "python3 .claude/hooks/user-prompt-submit.py",
+            "timeout": 5000
           }
         ]
       }
