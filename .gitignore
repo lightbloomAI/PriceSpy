@@ -55,3 +55,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# Claude analytics local log
+.claude-analytics.jsonl
