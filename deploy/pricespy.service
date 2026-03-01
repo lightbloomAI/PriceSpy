@@ -1,0 +1,23 @@
+[Unit]
+Description=PriceSpy - Price Monitoring App
+After=network.target
+
+[Service]
+Type=simple
+User=pricespy
+Group=pricespy
+WorkingDirectory=/opt/pricespy
+EnvironmentFile=/opt/pricespy/.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/pricespy/.cache-playwright
+ExecStart=/opt/pricespy/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/pricespy/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

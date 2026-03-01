@@ -3,6 +3,7 @@ from typing import List
 from .. import database
 from ..services.scraper import scrape_product_prices
 from ..services.alerts import check_and_send_alert
+from ..services.currency import convert_price
 
 router = APIRouter(prefix="/api/prices", tags=["prices"])
 
@@ -36,6 +37,9 @@ async def scrape_product(product_id: int):
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    # Get excluded sources
+    excluded_sources = await database.get_excluded_sources(product_id)
+
     # Scrape prices with all product attributes
     prices = await scrape_product_prices(
         product_id=product_id,
@@ -52,8 +56,12 @@ async def scrape_product(product_id: int):
     if not prices:
         return {"message": "No prices found", "prices": []}
 
-    # Store prices in database
-    for price_data in prices:
+    # Filter out excluded sources
+    filtered_prices = [p for p in prices if p["retailer"] not in excluded_sources]
+    excluded_count = len(prices) - len(filtered_prices)
+
+    # Store prices in database with original currency (only non-excluded)
+    for price_data in filtered_prices:
         await database.add_price_record(
             product_id=product_id,
             retailer=price_data["retailer"],
@@ -62,18 +70,20 @@ async def scrape_product(product_id: int):
             currency=price_data.get("currency", "EUR"),
         )
 
-    # Check for alerts
-    lowest = min(prices, key=lambda x: x["price"])
-    alert_sent = await check_and_send_alert(
-        product=product,
-        lowest_price=lowest["price"],
-        retailer=lowest["retailer"],
-        url=lowest["url"],
-    )
+    # Check for alerts (only from non-excluded sources)
+    alert_sent = False
+    if filtered_prices:
+        lowest = min(filtered_prices, key=lambda x: x["price"])
+        alert_sent = await check_and_send_alert(
+            product=product,
+            lowest_price=lowest["price"],
+            retailer=lowest["retailer"],
+            url=lowest["url"],
+        )
 
     return {
-        "message": f"Found {len(prices)} prices",
-        "prices": prices,
+        "message": f"Found {len(filtered_prices)} prices ({excluded_count} excluded)",
+        "prices": filtered_prices,
         "alert_sent": alert_sent,
     }
 
@@ -86,6 +96,9 @@ async def scrape_all_products():
     results = []
     for product in products:
         try:
+            # Get excluded sources for this product
+            excluded_sources = await database.get_excluded_sources(product["id"])
+
             prices = await scrape_product_prices(
                 product_id=product["id"],
                 search_query=product["search_query"],
@@ -98,7 +111,11 @@ async def scrape_all_products():
                 material=product.get("material"),
             )
 
-            for price_data in prices:
+            # Filter out excluded sources
+            filtered_prices = [p for p in prices if p["retailer"] not in excluded_sources]
+
+            # Store prices with original currency
+            for price_data in filtered_prices:
                 await database.add_price_record(
                     product_id=product["id"],
                     retailer=price_data["retailer"],
@@ -107,9 +124,9 @@ async def scrape_all_products():
                     currency=price_data.get("currency", "EUR"),
                 )
 
-            # Check for alerts
-            if prices:
-                lowest = min(prices, key=lambda x: x["price"])
+            # Check for alerts (only from non-excluded sources)
+            if filtered_prices:
+                lowest = min(filtered_prices, key=lambda x: x["price"])
                 alert_sent = await check_and_send_alert(
                     product=product,
                     lowest_price=lowest["price"],
@@ -122,7 +139,8 @@ async def scrape_all_products():
             results.append({
                 "product_id": product["id"],
                 "product_name": product["name"],
-                "prices_found": len(prices),
+                "prices_found": len(filtered_prices),
+                "excluded_count": len(prices) - len(filtered_prices),
                 "alert_sent": alert_sent,
             })
 

@@ -1,0 +1,11 @@
+# PriceSpy reverse proxy
+#
+# For IP-only access (no HTTPS):
+#   :80 { ... }
+#
+# For a domain with auto-HTTPS, replace :80 with your domain:
+#   pricespy.example.com { ... }
+
+:80 {
+    reverse_proxy 127.0.0.1:8000
+}

@@ -14,24 +14,175 @@
         <div class="mini-stat-label">active</div>
     </div>
     <div class="mini-stat-card">
-        <div class="mini-stat-value">6h</div>
+        {% set deals = [] %}
+        {% for p in products %}
+            {% if p.lowest_price_converted and p.lowest_price_converted < p.target_price %}
+                {% if deals.append(1) %}{% endif %}
+            {% endif %}
+        {% endfor %}
+        <div class="mini-stat-value" style="color: var(--success);">{{ deals|length }}</div>
+        <div class="mini-stat-label">deals found</div>
+    </div>
+    <div class="mini-stat-card">
+        <div class="mini-stat-value" id="countdown">--:--:--</div>
         <div class="mini-stat-label">next check</div>
     </div>
+    <div class="mini-stat-card mini-stat-action">
+        <button id="refresh-all-btn" class="btn btn-primary" onclick="window.manualRefresh()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh All
+        </button>
+    </div>
 </div>
+
+<script>
+(function() {
+    const INTERVAL_HOURS = 2;
+    const INTERVAL_MS = INTERVAL_HOURS * 60 * 60 * 1000;
+    const STORAGE_KEY = 'pricespy_last_refresh';
+    let isRefreshing = false;
+
+    // Get last manual refresh time from localStorage
+    function getLastRefreshTime() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        return stored ? new Date(parseInt(stored)) : null;
+    }
+
+    // Save refresh time to localStorage
+    function saveRefreshTime() {
+        localStorage.setItem(STORAGE_KEY, Date.now().toString());
+    }
+
+    // Calculate next check time - 6 hours after last refresh, or next fixed interval if no manual refresh
+    function getNextCheckTime() {
+        const now = new Date();
+        const lastRefresh = getLastRefreshTime();
+
+        // If we have a manual refresh time, next check is 6 hours after that
+        if (lastRefresh) {
+            const nextFromManual = new Date(lastRefresh.getTime() + INTERVAL_MS);
+            if (nextFromManual > now) {
+                return nextFromManual;
+            }
+        }
+
+        // Fallback: next 6-hour interval from midnight
+        const midnight = new Date(now);
+        midnight.setHours(0, 0, 0, 0);
+        let nextCheck = new Date(midnight);
+        while (nextCheck <= now) {
+            nextCheck = new Date(nextCheck.getTime() + INTERVAL_MS);
+        }
+        return nextCheck;
+    }
+
+    // Refresh prices for all products
+    async function refreshAllPrices() {
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        const countdownEl = document.getElementById('countdown');
+        const refreshBtn = document.getElementById('refresh-all-btn');
+        countdownEl.textContent = 'Refreshing...';
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Refreshing...';
+
+        // Get all product IDs from the page
+        const productLinks = document.querySelectorAll('a[href^="/product/"]');
+        const productIds = new Set();
+        productLinks.forEach(link => {
+            const match = link.href.match(/\/product\/(\d+)/);
+            if (match) productIds.add(match[1]);
+        });
+
+        // Refresh each product
+        for (const productId of productIds) {
+            try {
+                await fetch('/api/product/' + productId + '/refresh-prices', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (e) {
+                console.error('Failed to refresh product', productId, e);
+            }
+        }
+
+        // Save refresh time to reset the timer
+        saveRefreshTime();
+        isRefreshing = false;
+
+        // Reload page to show updated prices
+        location.reload();
+    }
+
+    // Expose for manual button click
+    window.manualRefresh = refreshAllPrices;
+
+    function updateCountdown() {
+        const now = new Date();
+        const nextCheck = getNextCheckTime();
+        const diff = nextCheck - now;
+
+        if (diff <= 0 && !isRefreshing) {
+            // Time to refresh!
+            refreshAllPrices();
+            return;
+        }
+
+        if (isRefreshing) return;
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        const pad = n => n.toString().padStart(2, '0');
+        document.getElementById('countdown').textContent = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    // Update immediately and then every second
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+})();
+</script>
 
 <!-- Electronics Section -->
 <div class="section-header">
     <h2>Electronics</h2>
-    <a href="/add?category=electronics" class="btn btn-outline btn-sm">+ Add new</a>
+    <a href="/add?category=electronics" class="btn btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Add new
+    </a>
 </div>
 <div class="card section-card">
 
     {% set electronics = products|selectattr('category', 'equalto', 'electronics')|list + products|rejectattr('category')|list %}
     {% if electronics %}
-    <div class="products-list">
+    <div class="products-list" id="electronics-list">
         {% for product in electronics %}
-        <div class="product-item">
+        <div class="product-item" data-id="{{ product.id }}">
             <div class="product-header">
+                <div class="drag-handle" title="Drag to reorder">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
+                        <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
+                        <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
+                    </svg>
+                </div>
+                <a href="/product/{{ product.id }}" class="product-thumb">
+                    {% if product.image_url %}
+                    <img src="{{ product.image_url }}" alt="{{ product.name }}">
+                    {% else %}
+                    <div class="product-thumb-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                </a>
                 <div class="product-info">
                     <a href="/product/{{ product.id }}" class="product-name">{{ product.name }}</a>
                     <div class="product-meta">
@@ -43,8 +194,8 @@
                 </div>
                 <div class="product-price">
                     {% if product.lowest_price %}
-                    <div class="price-current {% if product.lowest_price < product.target_price %}is-deal{% endif %}">
-                        {{ product.currency|default('EUR', true) }} {{ "%.2f"|format(product.lowest_price) }}
+                    <div class="price-current {% if product.lowest_price_converted and product.lowest_price_converted < product.target_price %}is-deal{% endif %}">
+                        {{ product.lowest_price_currency|default('EUR', true) }} {{ "%.2f"|format(product.lowest_price) }}
                     </div>
                     <div class="price-target">Target: {{ product.currency|default('EUR', true) }} {{ "%.2f"|format(product.target_price) }}</div>
                     {% else %}
@@ -61,11 +212,11 @@
             </div>
             {% if product.sources %}
             <div class="product-sources">
-                <span class="sources-label">Sources found:</span>
+                <span class="sources-label">Sources:</span>
                 {% for source in product.sources %}
                 <a href="{{ source.url }}" target="_blank" class="source-item {% if loop.first %}is-lowest{% endif %}">
                     <span class="source-name">{{ source.retailer }}</span>
-                    <span class="source-price">{{ product.currency|default('EUR', true) }} {{ "%.2f"|format(source.price) }}</span>
+                    <span class="source-price">{{ source.currency|default('EUR', true) }} {{ "%.2f"|format(source.price) }}</span>
                 </a>
                 {% endfor %}
             </div>
@@ -83,16 +234,39 @@
 <!-- Clothes Section -->
 <div class="section-header" style="margin-top: 40px;">
     <h2>Clothes</h2>
-    <a href="/add?category=clothes" class="btn btn-outline btn-sm">+ Add new</a>
+    <a href="/add?category=clothes" class="btn btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Add new
+    </a>
 </div>
 <div class="card section-card">
 
     {% set clothes = products|selectattr('category', 'equalto', 'clothes')|list %}
     {% if clothes %}
-    <div class="products-list">
+    <div class="products-list" id="clothes-list">
         {% for product in clothes %}
-        <div class="product-item">
+        <div class="product-item" data-id="{{ product.id }}">
             <div class="product-header">
+                <div class="drag-handle" title="Drag to reorder">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
+                        <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
+                        <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
+                    </svg>
+                </div>
+                <a href="/product/{{ product.id }}" class="product-thumb product-thumb-sm">
+                    {% if product.image_url %}
+                    <img src="{{ product.image_url }}" alt="{{ product.name }}">
+                    {% else %}
+                    <div class="product-thumb-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    {% endif %}
+                </a>
                 <div class="product-info">
                     <a href="/product/{{ product.id }}" class="product-name">{{ product.name }}</a>
                     <div class="product-meta">
@@ -104,8 +278,8 @@
                 </div>
                 <div class="product-price">
                     {% if product.lowest_price %}
-                    <div class="price-current {% if product.lowest_price < product.target_price %}is-deal{% endif %}">
-                        {{ product.currency|default('EUR', true) }} {{ "%.2f"|format(product.lowest_price) }}
+                    <div class="price-current {% if product.lowest_price_converted and product.lowest_price_converted < product.target_price %}is-deal{% endif %}">
+                        {{ product.lowest_price_currency|default('EUR', true) }} {{ "%.2f"|format(product.lowest_price) }}
                     </div>
                     <div class="price-target">Target: {{ product.currency|default('EUR', true) }} {{ "%.2f"|format(product.target_price) }}</div>
                     {% else %}
@@ -122,11 +296,11 @@
             </div>
             {% if product.sources %}
             <div class="product-sources">
-                <span class="sources-label">Sources found:</span>
+                <span class="sources-label">Sources:</span>
                 {% for source in product.sources %}
                 <a href="{{ source.url }}" target="_blank" class="source-item {% if loop.first %}is-lowest{% endif %}">
                     <span class="source-name">{{ source.retailer }}</span>
-                    <span class="source-price">{{ product.currency|default('EUR', true) }} {{ "%.2f"|format(source.price) }}</span>
+                    <span class="source-price">{{ source.currency|default('EUR', true) }} {{ "%.2f"|format(source.price) }}</span>
                 </a>
                 {% endfor %}
             </div>
@@ -140,4 +314,27 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.products-list').forEach(function(list) {
+        new Sortable(list, {
+            handle: '.drag-handle',
+            animation: 200,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            dragClass: 'sortable-drag',
+            onEnd: function() {
+                const ids = Array.from(list.querySelectorAll('.product-item'))
+                    .map(el => parseInt(el.dataset.id));
+                fetch('/api/products/reorder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ product_ids: ids })
+                });
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -7,8 +7,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=6">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -16,21 +17,29 @@
         <header class="header">
             <div class="header-left">
                 <a href="/" class="logo">
-                    <div class="logo-icon">P$</div>
+                    <div class="logo-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="currentColor" opacity="0.15"/>
+                            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                        </svg>
+                    </div>
                     <div class="logo-text">
-                        PriceSpy
-                        <span>Price Tracker</span>
+                        <span class="logo-brand">Price<span class="logo-highlight">Spy</span></span>
+                        <span class="logo-tagline">smart price tracking</span>
                     </div>
                 </a>
             </div>
 
             <div class="header-right">
-                <a href="/add" class="btn btn-primary">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Add Product
-                </a>
+                {% if user_email %}
+                <span style="color: var(--text-muted); font-size: 0.95rem;">{{ user_email }}</span>
+                <form method="post" action="/logout" style="margin:0;">
+                    <button type="submit" class="btn btn-ghost btn-sm">Logout</button>
+                </form>
+                {% endif %}
             </div>
         </header>
 

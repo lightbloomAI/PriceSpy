@@ -10,246 +10,394 @@
     Back to Dashboard
 </a>
 
-<!-- Product Header Card -->
-<div class="card" style="margin-bottom: 24px;">
-    <div class="card-body" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
-        <div>
-            <h1 style="font-size: 1.75rem; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0;">{{ product.name }}</h1>
-            <p style="color: var(--text-muted); margin: 0;">{{ product.search_query }}</p>
-            <div class="product-tags" style="margin-top: 12px;">
-                <span class="tag {{ product.category or 'electronics' }}">{{ (product.category or 'electronics')|capitalize }}</span>
-                <span class="tag {{ 'eu' if product.region == 'eu' else 'worldwide' }}">
-                    {% if product.region == 'eu' %}EU{% elif product.region == 'hu' %}HU{% else %}World{% endif %}
-                </span>
-                {% if product.brand %}<span class="tag">{{ product.brand }}</span>{% endif %}
+<!-- Top Row: Stats + Image + Product Card -->
+<div style="display: grid; grid-template-columns: 280px 180px 1fr; gap: 16px; margin-bottom: 20px;">
+    <!-- Stats Cards Column -->
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="card" style="padding: 12px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Target Price</span>
+                <span style="font-size: 1.1rem; font-weight: 600;">{{ product.currency|default('EUR', true) }} {{ "%.0f"|format(product.target_price) }}</span>
             </div>
         </div>
-        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <form action="/product/{{ product.id }}/toggle" method="post" style="display:inline;">
-                <button type="submit" class="btn btn-outline">
-                    {{ "Resume Tracking" if not product.is_active else "Pause Tracking" }}
+        <div class="card" style="padding: 12px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Lowest Found</span>
+                {% if lowest_converted %}
+                <span style="font-size: 1.1rem; font-weight: 600; color: var(--accent);">{{ lowest_converted.currency }} {{ "%.0f"|format(lowest_converted.price) }}</span>
+                {% elif latest_prices %}
+                <span style="font-size: 1.1rem; font-weight: 600; color: var(--accent);">{{ latest_prices[0].currency|default('EUR', true) }} {{ "%.0f"|format(latest_prices[0].price) }}</span>
+                {% else %}
+                <span style="font-size: 1.1rem; color: var(--text-muted);">—</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card" style="padding: 12px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Status</span>
+                {% if not product.is_active %}
+                <span class="badge badge-muted"><span class="status-dot"></span>Paused</span>
+                {% elif latest_prices and latest_prices[0].price < product.target_price %}
+                <span class="badge badge-success"><span class="status-dot"></span>Deal Found</span>
+                {% else %}
+                <span class="badge badge-warning"><span class="status-dot"></span>Watching</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card" style="padding: 12px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Alert Email</span>
+                <span style="font-size: 0.85rem; word-break: break-all;">{{ product.user_email }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Image -->
+    <div class="card" style="padding: 12px; display: flex; align-items: center; justify-content: center; background: var(--bg-muted);">
+        {% if product_image %}
+        <img src="{{ product_image }}" alt="{{ product.name }}" style="max-width: 100%; max-height: 160px; object-fit: contain; border-radius: 8px;">
+        {% else %}
+        <div style="text-align: center; color: var(--text-muted);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <div style="font-size: 0.75rem; margin-top: 4px;">No image</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Product Card -->
+    <div class="card" style="padding: 16px 20px;">
+        <div style="display: flex; gap: 20px;">
+            <!-- Left: Title + Properties -->
+            <div style="flex: 1;">
+                <h1 style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin: 0 0 14px 0;">{{ product.name }}</h1>
+                <!-- Search Properties in 2 wider columns -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 60px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-light); min-width: 180px;">
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Brand</span>
+                        <strong style="font-size: 0.85rem;">{{ product.brand or '—' }}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-light); min-width: 180px;">
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Color</span>
+                        <strong style="font-size: 0.85rem;">{{ product.color or '—' }}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-light);">
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Model</span>
+                        <strong style="font-size: 0.85rem;">{{ product.model or '—' }}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-light);">
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Region</span>
+                        <strong style="font-size: 0.85rem;">{% if product.region == 'eu' %}EU{% elif product.region == 'hu' %}Hungary{% else %}Worldwide{% endif %}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-light);">
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Size</span>
+                        <strong style="font-size: 0.85rem;">{{ product.size or '—' }}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-light);">
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Query</span>
+                        <strong style="font-size: 0.85rem;">{{ product.search_query }}</strong>
+                    </div>
+                </div>
+            </div>
+            <!-- Right: Action buttons stacked -->
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 110px;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="findSources({{ product.id }})" id="find-sources-btn" title="Search for new retailers" style="justify-content: center;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" id="find-icon">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <span id="find-text" style="margin-left: 4px;">Find Sources</span>
                 </button>
-            </form>
-            <form action="/product/{{ product.id }}/delete" method="post" style="display:inline;"
-                  onsubmit="return confirm('Delete this product and all its price history?');">
-                <button type="submit" class="btn btn-danger">Delete</button>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Stats Row -->
-<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 24px;">
-    <div class="stat-card">
-        <div class="icon" style="background: rgba(232, 90, 79, 0.1);">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--accent)" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-        </div>
-        <div class="label">Target Price</div>
-        <div class="value">{{ product.currency|default('EUR', true) }} {{ "%.2f"|format(product.target_price) }}</div>
-    </div>
-
-    <div class="stat-card">
-        <div class="icon" style="background: rgba(34, 197, 94, 0.1);">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#22c55e" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-        </div>
-        <div class="label">Lowest Found</div>
-        {% if latest_prices %}
-        <div class="value accent">{{ product.currency|default('EUR', true) }} {{ "%.2f"|format(latest_prices[0].price) }}</div>
-        <div class="change {% if latest_prices[0].price < product.target_price %}positive{% else %}neutral{% endif %}">
-            {{ latest_prices[0].retailer }}
-        </div>
-        {% else %}
-        <div class="value">No data</div>
-        {% endif %}
-    </div>
-
-    <div class="stat-card">
-        <div class="icon">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-        </div>
-        <div class="label">Status</div>
-        <div class="value">
-            {% if not product.is_active %}
-            <span class="badge badge-muted"><span class="status-dot"></span>Paused</span>
-            {% elif latest_prices and latest_prices[0].price < product.target_price %}
-            <span class="badge badge-success"><span class="status-dot"></span>Deal Found</span>
-            {% else %}
-            <span class="badge badge-warning"><span class="status-dot"></span>Watching</span>
-            {% endif %}
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="icon">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-        </div>
-        <div class="label">Alert Email</div>
-        <div class="value" style="font-size: 0.875rem; word-break: break-all;">{{ product.user_email }}</div>
-    </div>
-</div>
-
-<!-- Product Details Card -->
-<div class="card" style="margin-bottom: 24px;">
-    <div class="card-header">
-        <h2 class="card-title">Product Details</h2>
-    </div>
-    <div class="card-body">
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px;">
-            {% if product.brand %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Brand</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.brand }}</div>
-            </div>
-            {% endif %}
-            {% if product.model %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Model</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.model }}</div>
-            </div>
-            {% endif %}
-            {% if product.storage %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Storage</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.storage }}</div>
-            </div>
-            {% endif %}
-            {% if product.size %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Size</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.size }}</div>
-            </div>
-            {% endif %}
-            {% if product.color %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Color</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.color }}</div>
-            </div>
-            {% endif %}
-            {% if product.material %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Material</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.material }}</div>
-            </div>
-            {% endif %}
-            <div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Added</div>
-                <div style="font-weight: 500; color: var(--text-primary);">{{ product.created_at[:10] if product.created_at else 'N/A' }}</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Price Charts and Lists -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px; margin-bottom: 24px;">
-    <!-- Current Prices -->
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title">Current Prices</h3>
-        </div>
-        {% if latest_prices %}
-        <div class="card-body" style="padding: 0;">
-            <ul style="list-style: none; margin: 0; padding: 0;">
-                {% for price in latest_prices %}
-                <li style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-light); {% if loop.first %}background: rgba(34, 197, 94, 0.05);{% endif %}">
-                    <div>
-                        <div style="font-weight: 600; color: var(--text-primary);">{{ price.retailer }}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">{{ price.scraped_at[:16] if price.scraped_at else '' }}</div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-weight: 700; font-size: 1.125rem; {% if loop.first %}color: var(--accent);{% else %}color: var(--text-primary);{% endif %}">
-                            {{ product.currency|default('EUR', true) }} {{ "%.2f"|format(price.price) }}
-                        </span>
-                        {% if price.url %}
-                        <a href="{{ price.url }}" target="_blank" class="btn btn-primary btn-sm">Visit</a>
-                        {% endif %}
-                    </div>
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% else %}
-        <div class="card-body">
-            <div class="empty-state">
-                <div class="empty-state-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <button type="button" class="btn btn-outline btn-sm" onclick="refreshPrices({{ product.id }})" id="refresh-btn" title="Refresh prices for existing sources" style="justify-content: center;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" id="refresh-icon">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                </div>
-                <h3>No prices yet</h3>
-                <p>Prices will be collected on the next scheduled run.</p>
+                    <span id="refresh-text" style="margin-left: 4px;">Refresh Prices</span>
+                </button>
+                <a href="/product/{{ product.id }}/edit" class="btn btn-outline btn-sm" style="text-align: center;">Edit</a>
+                <form action="/product/{{ product.id }}/toggle" method="post">
+                    <button type="submit" class="btn btn-outline btn-sm" style="width: 100%;">{{ "Resume" if not product.is_active else "Pause" }}</button>
+                </form>
+                <button type="button" class="btn btn-ghost btn-sm" style="color: var(--danger);" onclick="confirmDelete({{ product.id }})">Delete</button>
             </div>
         </div>
-        {% endif %}
-    </div>
-
-    <!-- Price History Chart -->
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title">Price History</h3>
-        </div>
-        {% if price_history %}
-        <div class="card-body">
-            <div style="height: 300px;">
-                <canvas id="priceChart"></canvas>
-            </div>
-        </div>
-        {% else %}
-        <div class="card-body">
-            <div class="empty-state">
-                <div class="empty-state-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                    </svg>
-                </div>
-                <h3>No history yet</h3>
-                <p>Price history will appear after the first scrape.</p>
-            </div>
-        </div>
-        {% endif %}
     </div>
 </div>
 
-<!-- All Price Records Table -->
-{% if price_history %}
-<div class="card">
-    <div class="card-header">
-        <h3 class="card-title">All Price Records</h3>
-        <span style="font-size: 0.875rem; color: var(--text-muted);">{{ price_history|length }} records</span>
+<script>
+// Add CSS animation for spinning icons
+if (!document.getElementById('spin-style')) {
+    const style = document.createElement('style');
+    style.id = 'spin-style';
+    style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+    document.head.appendChild(style);
+}
+
+function confirmDelete(productId) {
+    if (confirm('Are you sure you want to delete this product?\n\nThis will permanently remove the product and all its price history.')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/product/' + productId + '/delete';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+async function findSources(productId) {
+    const btn = document.getElementById('find-sources-btn');
+    const icon = document.getElementById('find-icon');
+    const text = document.getElementById('find-text');
+
+    btn.disabled = true;
+    text.textContent = 'Searching...';
+    icon.style.animation = 'spin 1s linear infinite';
+
+    try {
+        const response = await fetch('/api/product/' + productId + '/find-sources', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            text.textContent = 'Find Sources';
+        } else {
+            if (data.new_sources > 0) {
+                text.textContent = data.new_sources + ' new found!';
+            } else {
+                text.textContent = 'No new sources';
+            }
+            setTimeout(() => location.reload(), 1500);
+        }
+    } catch (error) {
+        alert('Failed: ' + error.message);
+        text.textContent = 'Find Sources';
+    } finally {
+        icon.style.animation = '';
+        btn.disabled = false;
+    }
+}
+
+async function refreshPrices(productId) {
+    const btn = document.getElementById('refresh-btn');
+    const icon = document.getElementById('refresh-icon');
+    const text = document.getElementById('refresh-text');
+
+    btn.disabled = true;
+    text.textContent = 'Refreshing...';
+    icon.style.animation = 'spin 1s linear infinite';
+
+    try {
+        const response = await fetch('/api/product/' + productId + '/refresh-prices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            text.textContent = 'Refresh Prices';
+        } else {
+            let msg = data.updated + ' updated';
+            if (data.failed > 0) msg += ', ' + data.failed + ' failed';
+            if (data.skipped_google > 0) msg += ' (' + data.skipped_google + ' Google links skipped)';
+            text.textContent = msg;
+            setTimeout(() => location.reload(), 1500);
+        }
+    } catch (error) {
+        alert('Failed: ' + error.message);
+        text.textContent = 'Refresh Prices';
+    } finally {
+        icon.style.animation = '';
+        btn.disabled = false;
+    }
+}
+
+            function toggleAddSource() {
+                const form = document.getElementById('add-source-form');
+                form.style.display = form.style.display === 'none' ? 'block' : 'none';
+                if (form.style.display === 'block') {
+                    document.getElementById('new-source-url').focus();
+                }
+            }
+
+            async function addSource(productId) {
+                const url = document.getElementById('new-source-url').value.trim();
+                const status = document.getElementById('add-source-status');
+                const btn = document.getElementById('add-source-btn');
+
+                if (!url) {
+                    status.innerHTML = '<span style="color: var(--danger);">Please enter a URL</span>';
+                    return;
+                }
+
+                btn.disabled = true;
+                btn.textContent = 'Adding...';
+                status.innerHTML = '<span style="color: var(--text-muted);">Fetching product data...</span>';
+
+                try {
+                    const response = await fetch('/api/product/' + productId + '/add-source', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        status.innerHTML = '<span style="color: var(--danger);">Error: ' + data.error + '</span>';
+                    } else {
+                        status.innerHTML = '<span style="color: var(--success);">Added: ' + data.retailer + ' - ' + data.currency + ' ' + data.price + '</span>';
+                        setTimeout(() => location.reload(), 1500);
+                    }
+                } catch (error) {
+                    status.innerHTML = '<span style="color: var(--danger);">Failed: ' + error.message + '</span>';
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'Add';
+                }
+}
+</script>
+
+<!-- Sources Card -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h2 class="card-title">Sources</h2>
+            <span style="font-size: 0.875rem; color: var(--text-muted);">{{ sources|length }} retailer{{ 's' if sources|length != 1 else '' }} found</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleAddSource()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="margin-right: 4px; vertical-align: middle;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Source
+        </button>
     </div>
-    <div style="max-height: 400px; overflow-y: auto;">
-        <div class="table-header" style="position: sticky; top: 0; z-index: 1;">
-            <div>Date</div>
+    <!-- Add Source Form -->
+    <div id="add-source-form" style="display: none; padding: 16px 24px; background: var(--bg-muted); border-bottom: 1px solid var(--border-light);">
+        <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 300px;">
+                <label style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; display: block;">Product URL</label>
+                <input type="url" id="new-source-url" class="form-input" placeholder="https://example.com/product..." style="width: 100%;">
+            </div>
+            <button type="button" class="btn btn-primary" onclick="addSource({{ product.id }})" id="add-source-btn">
+                Add
+            </button>
+            <button type="button" class="btn btn-ghost" onclick="toggleAddSource()">
+                Cancel
+            </button>
+        </div>
+        <div id="add-source-status" style="margin-top: 8px; font-size: 0.875rem;"></div>
+    </div>
+    {% if sources %}
+    <div class="card-body" style="padding: 0;">
+        <div class="table-header" style="grid-template-columns: 2fr 1fr 1fr 1fr auto;">
             <div>Retailer</div>
-            <div>Price</div>
-            <div style="text-align: right;">Link</div>
+            <div>Country</div>
+            <div>Original Price</div>
+            <div>Price (HUF)</div>
+            <div style="text-align: right;">Action</div>
         </div>
         <div class="products-list">
-            {% for record in price_history %}
-            <div class="product-row" style="grid-template-columns: 1fr 1fr 1fr auto;">
-                <div style="font-size: 0.875rem; color: var(--text-secondary);">{{ record.scraped_at[:16] if record.scraped_at else '' }}</div>
-                <div style="font-weight: 500;">{{ record.retailer }}</div>
-                <div style="font-weight: 600; {% if record.price < product.target_price %}color: var(--success);{% else %}color: var(--text-primary);{% endif %}">
-                    {{ product.currency|default('EUR', true) }} {{ "%.2f"|format(record.price) }}
+            {% for source in sources %}
+            <div class="product-row" style="grid-template-columns: 2fr 1fr 1fr 1fr auto; {% if source.is_excluded %}opacity: 0.5; background: var(--bg-muted);{% endif %}">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <!-- Scrape status indicator -->
+                    {% if source.scrape_success %}
+                    <span title="Last scrape successful{% if source.last_checked %} ({{ source.last_checked[:16] }}){% endif %}" style="color: #22c55e; font-size: 10px;">●</span>
+                    {% else %}
+                    <span title="Last scrape failed: {{ source.scrape_error or 'Unknown error' }}" style="color: #ef4444; font-size: 10px;">●</span>
+                    {% endif %}
+                    {% if source.url %}
+                        {% if 'google.com/search' in source.url %}
+                        <span style="font-weight: 500; color: var(--text-primary);">{{ source.retailer }}</span>
+                        <a href="{{ source.url }}" target="_blank" title="Opens Google Shopping" style="color: var(--text-muted); font-size: 0.75rem;">(via Google)</a>
+                        {% else %}
+                        <a href="{{ source.url }}" target="_blank" style="font-weight: 500; color: var(--accent); text-decoration: underline;">{{ source.retailer }}</a>
+                        {% endif %}
+                    {% else %}
+                    <div style="font-weight: 500; color: var(--text-primary);">{{ source.retailer }}</div>
+                    {% endif %}
+                </div>
+                <div style="color: var(--text-secondary);">
+                    {% if source.country_code %}
+                    <span title="{{ source.country_name }}">{{ source.country_code }}</span>
+                    {% else %}
+                    <span style="color: var(--text-muted);">—</span>
+                    {% endif %}
+                </div>
+                <div style="color: var(--text-secondary);">{{ source.currency }} {{ "%.2f"|format(source.latest_price) }}</div>
+                <div style="font-weight: 600; color: var(--text-primary);">
+                    {% if source.price_huf %}
+                    {{ "{:,.0f}".format(source.price_huf) }} Ft
+                    {% else %}
+                    <span style="color: var(--text-muted);">—</span>
+                    {% endif %}
                 </div>
                 <div style="text-align: right;">
-                    {% if record.url %}
-                    <a href="{{ record.url }}" target="_blank" class="btn btn-ghost btn-sm">Visit</a>
+                    {% if source.is_excluded %}
+                    <form action="/product/{{ product.id }}/include-source" method="post" style="display: inline;">
+                        <input type="hidden" name="retailer" value="{{ source.retailer }}">
+                        <button type="submit" class="btn btn-outline btn-sm" title="Re-enable tracking from this source">
+                            Include
+                        </button>
+                    </form>
+                    {% else %}
+                    <form action="/product/{{ product.id }}/exclude-source" method="post" style="display: inline;">
+                        <input type="hidden" name="retailer" value="{{ source.retailer }}">
+                        <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--danger);" title="Stop tracking prices from this source">
+                            Exclude
+                        </button>
+                    </form>
                     {% endif %}
                 </div>
             </div>
             {% endfor %}
         </div>
     </div>
+    {% else %}
+    <div class="card-body">
+        <div class="empty-state">
+            <div class="empty-state-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+            </div>
+            <h3>No sources yet</h3>
+            <p>Sources will appear after the first price scrape.</p>
+        </div>
+    </div>
+    {% endif %}
 </div>
-{% endif %}
+
+<!-- Price History Chart -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Price History</h3>
+    </div>
+    {% if price_history %}
+    <div class="card-body">
+        <div style="height: 300px;">
+            <canvas id="priceChart"></canvas>
+        </div>
+    </div>
+    {% else %}
+    <div class="card-body">
+        <div class="empty-state">
+            <div class="empty-state-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                </svg>
+            </div>
+            <h3>No history yet</h3>
+            <p>Price history will appear after the first scrape.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -262,17 +410,26 @@ document.addEventListener('DOMContentLoaded', function() {
     const priceData = {{ price_history | tojson }};
     const targetPrice = {{ product.target_price }};
 
-    // Sort by date and take recent entries
-    const sortedData = priceData
-        .sort((a, b) => new Date(a.scraped_at) - new Date(b.scraped_at))
-        .slice(-30);
-
-    const labels = sortedData.map(p => {
+    // Group by day and get lowest price per day
+    const dailyPrices = {};
+    priceData.forEach(p => {
         const date = new Date(p.scraped_at);
+        const dayKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        if (!dailyPrices[dayKey] || p.price < dailyPrices[dayKey].price) {
+            dailyPrices[dayKey] = { date: date, price: p.price };
+        }
+    });
+
+    // Sort by date
+    const sortedDays = Object.keys(dailyPrices).sort();
+    const recentDays = sortedDays.slice(-30);
+
+    const labels = recentDays.map(day => {
+        const date = new Date(day);
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
 
-    const prices = sortedData.map(p => p.price);
+    const prices = recentDays.map(day => dailyPrices[day].price);
 
     new Chart(ctx, {
         type: 'line',

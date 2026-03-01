@@ -15,11 +15,39 @@
         <h2 class="card-title">Add {{ 'Clothes' if category == 'clothes' else 'Electronics' }}</h2>
     </div>
     <div class="card-body">
+        <!-- URL Fetch Section -->
+        <div class="form-section url-section">
+            <div class="form-section-title">Import from URL</div>
+            <div class="url-input-group">
+                <input type="url" id="product_url" class="form-input"
+                       placeholder="Paste a product URL to auto-fill details...">
+                <button type="button" id="fetch-btn" class="btn btn-primary" onclick="fetchProductData()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Fetch
+                </button>
+            </div>
+            <div id="fetch-status" class="fetch-status"></div>
+        </div>
+
+        <!-- Image Selection -->
+        <div id="image-section" class="form-section" style="display: none;">
+            <div class="form-section-title">Product Images</div>
+            <div id="image-gallery" class="image-gallery"></div>
+            <input type="hidden" id="selected_image" name="image_url" value="">
+        </div>
+
         <form method="post" action="/add" id="productForm">
             <input type="hidden" name="category" value="{{ category or 'electronics' }}">
+            <input type="hidden" name="image_url" id="form_image_url" value="">
+            <input type="hidden" name="source_url" id="form_source_url" value="">
+            <input type="hidden" name="source_price" id="form_source_price" value="">
+            <input type="hidden" name="source_currency" id="form_source_currency" value="">
 
             <!-- Product Info -->
             <div class="form-section">
+                <div class="form-section-title">Product Information</div>
                 <div class="form-group">
                     <label for="name" class="form-label">Product Name</label>
                     <input type="text" id="name" name="name" class="form-input" required
@@ -151,6 +179,136 @@ function updateCurrency() {
     } else {
         currency.value = 'USD';
     }
+}
+
+async function fetchProductData() {
+    const url = document.getElementById('product_url').value.trim();
+    const status = document.getElementById('fetch-status');
+    const fetchBtn = document.getElementById('fetch-btn');
+
+    if (!url) {
+        status.innerHTML = '<span class="error">Please enter a URL</span>';
+        return;
+    }
+
+    // Show loading state
+    fetchBtn.disabled = true;
+    fetchBtn.innerHTML = '<span class="spinner"></span> Fetching...';
+    status.innerHTML = '<span class="loading">Scraping product data...</span>';
+
+    try {
+        const response = await fetch('/api/scrape-url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: url })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            status.innerHTML = '<span class="error">Error: ' + data.error + '</span>';
+            return;
+        }
+
+        // Fill in the form fields
+        if (data.name) {
+            document.getElementById('name').value = data.name;
+            // Also set search query to product name by default
+            document.getElementById('search_query').value = data.name;
+        }
+        if (data.brand) {
+            document.getElementById('brand').value = data.brand;
+        }
+        if (data.price) {
+            document.getElementById('target_price').value = data.price;
+        }
+        if (data.currency) {
+            const currencySelect = document.getElementById('currency');
+            const option = currencySelect.querySelector(`option[value="${data.currency}"]`);
+            if (option) currencySelect.value = data.currency;
+        }
+        if (data.color) {
+            const colorField = document.getElementById('color');
+            if (colorField) colorField.value = data.color;
+        }
+        if (data.model) {
+            const modelField = document.getElementById('model');
+            if (modelField) modelField.value = data.model;
+        }
+        if (data.storage) {
+            const storageField = document.getElementById('storage');
+            if (storageField) storageField.value = data.storage;
+        }
+        if (data.size) {
+            const sizeField = document.getElementById('size');
+            if (sizeField) sizeField.value = data.size;
+        }
+        if (data.material) {
+            const materialField = document.getElementById('material');
+            if (materialField) materialField.value = data.material;
+        }
+
+        // Show images if available
+        if (data.images && data.images.length > 0) {
+            showImageGallery(data.images);
+        }
+
+        // Save source URL, price and currency so it gets added as a source on submit
+        document.getElementById('form_source_url').value = url;
+        if (data.price) {
+            document.getElementById('form_source_price').value = data.price;
+        }
+        if (data.currency) {
+            document.getElementById('form_source_currency').value = data.currency;
+        }
+
+        status.innerHTML = '<span class="success">Product data loaded! Review and adjust the fields below.</span>';
+
+    } catch (error) {
+        status.innerHTML = '<span class="error">Failed to fetch: ' + error.message + '</span>';
+    } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Fetch
+        `;
+    }
+}
+
+function showImageGallery(images) {
+    const section = document.getElementById('image-section');
+    const gallery = document.getElementById('image-gallery');
+
+    section.style.display = 'block';
+    gallery.innerHTML = '';
+
+    images.forEach((img, index) => {
+        const div = document.createElement('div');
+        div.className = 'image-option' + (index === 0 ? ' selected' : '');
+        div.innerHTML = `<img src="${img}" alt="Product image ${index + 1}" onerror="this.parentElement.remove()">`;
+        div.onclick = () => selectImage(div, img);
+        gallery.appendChild(div);
+    });
+
+    // Select first image by default
+    if (images.length > 0) {
+        document.getElementById('selected_image').value = images[0];
+        document.getElementById('form_image_url').value = images[0];
+    }
+}
+
+function selectImage(element, url) {
+    // Remove selected class from all
+    document.querySelectorAll('.image-option').forEach(el => el.classList.remove('selected'));
+    // Add to clicked one
+    element.classList.add('selected');
+    // Update hidden input
+    document.getElementById('selected_image').value = url;
+    document.getElementById('form_image_url').value = url;
 }
 </script>
 {% endblock %}
