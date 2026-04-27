@@ -319,48 +319,46 @@ async def scrape_product_url(url: str) -> Dict[str, Any]:
 
         # --- Extraction pipeline (priority order) ---
 
-        # Amazon: use a strict main-product extractor first, and skip the
-        # generic HTML pattern fallback so we never pick up a cross-sell price
         is_amazon = 'amazon.' in urlparse(url).netloc.lower()
+
         if is_amazon:
+            # Amazon: ONLY trust the strict main-product extractor. Skip every
+            # other extractor (JSON-LD, OG, inline JS, microdata, regex), all
+            # of which have at various points picked up garbage prices from
+            # accessory listings, shipping fees, "EUR 3 off" coupons, etc.
             result = extract_amazon_price(soup, result)
+            if not result["price"]:
+                result["error"] = "Amazon price block missing — likely blocked by anti-bot. Try again later."
+            # Still pull title/description from meta tags for display
+            result = extract_meta_tags(soup, result)
         else:
             # Method 1: HTML patterns (shows actual displayed price)
             result = extract_html_patterns(soup, result)
 
-        # Method 2: JSON-LD structured data
-        result = extract_json_ld(soup, result)
+            # Method 2: JSON-LD structured data
+            result = extract_json_ld(soup, result)
 
-        # Method 3: OpenGraph meta tags
-        result = extract_opengraph(soup, result)
+            # Method 3: OpenGraph meta tags
+            result = extract_opengraph(soup, result)
 
-        # Method 4: Next.js __NEXT_DATA__ (React SSR sites)
-        result = extract_next_data(soup, result)
+            # Method 4: Next.js __NEXT_DATA__ (React SSR sites)
+            result = extract_next_data(soup, result)
 
-        # Method 5: Inline JavaScript data (dataLayer, window vars, Nuxt, etc.)
-        result = extract_inline_js_data(soup, result)
+            # Method 5: Inline JavaScript data (dataLayer, window vars, Nuxt, etc.)
+            result = extract_inline_js_data(soup, result)
 
-        # Method 6: Shopify product data (inline JSON and /products/*.json API)
-        result = await extract_shopify_data(soup, result, url)
+            # Method 6: Shopify product data (inline JSON and /products/*.json API)
+            result = await extract_shopify_data(soup, result, url)
 
-        # Method 7: Microdata (itemprop attributes)
-        result = extract_microdata(soup, result)
+            # Method 7: Microdata (itemprop attributes)
+            result = extract_microdata(soup, result)
 
-        # Method 8: Standard meta tags
-        result = extract_meta_tags(soup, result)
+            # Method 8: Standard meta tags
+            result = extract_meta_tags(soup, result)
 
-        # Method 9: Regex price extraction from raw HTML (last resort).
-        # Skip for Amazon: when the buy-box block is stripped (common anti-bot
-        # behavior on server IPs), regex on the rest of the page picks up
-        # garbage numbers (shipping, ratings, "EUR 3 off" coupons, etc.).
-        # Better to surface a clear error than to write a wrong price.
-        if not result["price"] and not is_amazon:
-            result = extract_price_from_raw_html(html, result)
-
-        # If Amazon's strict extractor found no price, mark this run as failed
-        # so callers can surface "couldn't read price" instead of a stale value
-        if is_amazon and not result["price"]:
-            result["error"] = "Amazon price block missing — likely blocked by anti-bot. Try again later."
+            # Method 9: Regex price extraction from raw HTML (last resort)
+            if not result["price"]:
+                result = extract_price_from_raw_html(html, result)
 
         # --- Browser fallback ---
         # If all methods failed to find a price and we haven't tried the browser yet, retry
