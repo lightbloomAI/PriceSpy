@@ -120,6 +120,32 @@ async def scrape_with_browser(url: str) -> str:
         page = await context.new_page()
 
         try:
+            # For Amazon, warm up the session by visiting the homepage first.
+            # Going straight to /dp/ from a fresh datacenter IP triggers anti-bot;
+            # touching the homepage first lets Amazon set its own session cookies
+            # (session-id, ubid-acbde, csm-hit) which makes subsequent product-page
+            # requests look like real browsing rather than direct scraping.
+            if 'amazon.' in domain:
+                # Extract the Amazon TLD (e.g. "de" from "www.amazon.de")
+                m = re.search(r'amazon\.([a-z.]+)', domain)
+                tld = m.group(1) if m else 'com'
+                home = f"https://www.amazon.{tld}/"
+                try:
+                    await page.goto(home, wait_until="domcontentloaded", timeout=30000)
+                    # Accept Amazon's cookie banner if it appears
+                    for sel in ["#sp-cc-accept", "input[name='accept']", "button[name='accept']"]:
+                        try:
+                            btn = page.locator(sel).first
+                            if await btn.is_visible(timeout=1500):
+                                await btn.click()
+                                await page.wait_for_timeout(800)
+                                break
+                        except Exception:
+                            continue
+                    await page.wait_for_timeout(1500)
+                except Exception:
+                    pass  # If homepage fails, still try the product page
+
             # Use domcontentloaded instead of networkidle (some sites never settle)
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
 
@@ -127,6 +153,7 @@ async def scrape_with_browser(url: str) -> str:
             try:
                 # Common cookie consent button selectors
                 cookie_selectors = [
+                    "#sp-cc-accept",  # Amazon's own banner
                     "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
                     "button[id*='accept']",
                     "button[class*='accept']",
@@ -149,8 +176,32 @@ async def scrape_with_browser(url: str) -> str:
             except:
                 pass  # No cookie dialog or already dismissed
 
-            # Wait for dynamic content to load
-            await page.wait_for_timeout(5000)
+            # For Amazon: explicitly wait for the price block to appear; if it
+            # doesn't show up the page is anti-bot stripped, retry once after
+            # a small scroll (real users scroll, bots usually don't).
+            if 'amazon.' in domain:
+                try:
+                    await page.wait_for_selector(
+                        "#corePriceDisplay_desktop_feature_div, #apex-pricetopay-accessibility-label, #priceblock_ourprice, #twister-plus-price-data-price",
+                        timeout=8000,
+                    )
+                except Exception:
+                    # Simulate human: scroll, wait, retry waiting for price
+                    try:
+                        await page.mouse.wheel(0, 500)
+                        await page.wait_for_timeout(1500)
+                        await page.mouse.wheel(0, 800)
+                        await page.wait_for_timeout(1500)
+                        await page.wait_for_selector(
+                            "#corePriceDisplay_desktop_feature_div, #apex-pricetopay-accessibility-label, #priceblock_ourprice, #twister-plus-price-data-price",
+                            timeout=8000,
+                        )
+                    except Exception:
+                        pass  # Still stripped — caller will surface error
+                await page.wait_for_timeout(1500)
+            else:
+                # Wait for dynamic content to load
+                await page.wait_for_timeout(5000)
             html = await page.content()
         finally:
             await browser.close()
