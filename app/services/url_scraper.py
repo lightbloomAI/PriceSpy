@@ -268,8 +268,14 @@ async def scrape_product_url(url: str) -> Dict[str, Any]:
 
         # --- Extraction pipeline (priority order) ---
 
-        # Method 1: HTML patterns (shows actual displayed price)
-        result = extract_html_patterns(soup, result)
+        # Amazon: use a strict main-product extractor first, and skip the
+        # generic HTML pattern fallback so we never pick up a cross-sell price
+        is_amazon = 'amazon.' in urlparse(url).netloc.lower()
+        if is_amazon:
+            result = extract_amazon_price(soup, result)
+        else:
+            # Method 1: HTML patterns (shows actual displayed price)
+            result = extract_html_patterns(soup, result)
 
         # Method 2: JSON-LD structured data
         result = extract_json_ld(soup, result)
@@ -991,6 +997,102 @@ def extract_price_from_raw_html(html: str, result: Dict) -> Dict:
                     return result
             except ValueError:
                 pass
+
+    return result
+
+
+def extract_amazon_price(soup: BeautifulSoup, result: Dict) -> Dict:
+    """
+    Strict Amazon main-product extractor.
+
+    Amazon pages embed *many* `.a-price` blocks for cross-sells, bundles,
+    "frequently bought together", and other-variation tiles. Falling back to
+    a generic `.a-price` selector can grab one of those by accident, which is
+    how this scraper occasionally returned €12 / €162 etc. for a €266 item.
+
+    This function ONLY reads from elements that are part of the main product's
+    buy-box / price-to-pay block. If none match, we leave `price` unset rather
+    than risk a wrong value.
+    """
+    if not result["name"]:
+        title_el = soup.select_one("#productTitle")
+        if title_el:
+            result["name"] = title_el.get_text().strip()
+
+    if result["price"]:
+        return result
+
+    # Tier 1: structured / hidden inputs (cleanest — already numeric)
+    inp = soup.select_one("#twister-plus-price-data-price")
+    if inp and inp.get("value"):
+        try:
+            price = float(inp["value"])
+            if price > 0:
+                result["price"] = price
+                result["currency"] = "EUR" if "amazon.de" in (inp.get("data-marketplace", "") or "") else result["currency"]
+                return result
+        except (ValueError, TypeError):
+            pass
+
+    # Tier 2: aria-label of the price-to-pay (e.g. "266,80 € mit ...")
+    label = soup.select_one("#apex-pricetopay-accessibility-label")
+    if label:
+        # Take only the leading "<digits>,<digits> €" — ignore the "mit X Prozent" suffix
+        m = re.search(r"(\d{1,6}(?:[.,]\d{1,2})?)\s*€", label.get_text())
+        if m:
+            try:
+                price = float(m.group(1).replace(",", "."))
+                if price > 0:
+                    result["price"] = price
+                    result["currency"] = "EUR"
+                    return result
+            except ValueError:
+                pass
+
+    # Tier 3: known main-product price containers
+    for container_sel in [
+        "#corePriceDisplay_desktop_feature_div",
+        "#corePrice_feature_div",
+        "#apex_desktop",
+        "#buybox",
+    ]:
+        container = soup.select_one(container_sel)
+        if not container:
+            continue
+        # Inside the container, prefer .priceToPay first
+        for inner in [".priceToPay .a-offscreen", ".a-price .a-offscreen", ".a-offscreen"]:
+            el = container.select_one(inner)
+            if el and el.get_text().strip():
+                price = extract_price(el.get_text())
+                if price and price > 0:
+                    result["price"] = price
+                    result["currency"] = "EUR"
+                    return result
+        # Reconstruct from .a-price-whole + .a-price-fraction
+        whole = container.select_one(".a-price-whole")
+        frac = container.select_one(".a-price-fraction")
+        if whole:
+            whole_text = re.sub(r"[^\d]", "", whole.get_text())
+            frac_text = re.sub(r"[^\d]", "", frac.get_text()) if frac else "00"
+            if whole_text:
+                try:
+                    price = float(f"{whole_text}.{frac_text or '00'}")
+                    if price > 0:
+                        result["price"] = price
+                        result["currency"] = "EUR"
+                        return result
+                except ValueError:
+                    pass
+
+    # Tier 4: legacy IDs
+    for sel in ["#priceblock_ourprice", "#priceblock_dealprice", "#priceblock_saleprice"]:
+        el = soup.select_one(sel)
+        if el:
+            price = extract_price(el.get_text())
+            if price and price > 0:
+                result["price"] = price
+                result["currency"] = "EUR"
+                return result
 
     return result
 
