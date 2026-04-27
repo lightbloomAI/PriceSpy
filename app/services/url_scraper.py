@@ -298,9 +298,18 @@ async def scrape_product_url(url: str) -> Dict[str, Any]:
         # Method 8: Standard meta tags
         result = extract_meta_tags(soup, result)
 
-        # Method 9: Regex price extraction from raw HTML (last resort)
-        if not result["price"]:
+        # Method 9: Regex price extraction from raw HTML (last resort).
+        # Skip for Amazon: when the buy-box block is stripped (common anti-bot
+        # behavior on server IPs), regex on the rest of the page picks up
+        # garbage numbers (shipping, ratings, "EUR 3 off" coupons, etc.).
+        # Better to surface a clear error than to write a wrong price.
+        if not result["price"] and not is_amazon:
             result = extract_price_from_raw_html(html, result)
+
+        # If Amazon's strict extractor found no price, mark this run as failed
+        # so callers can surface "couldn't read price" instead of a stale value
+        if is_amazon and not result["price"]:
+            result["error"] = "Amazon price block missing — likely blocked by anti-bot. Try again later."
 
         # --- Browser fallback ---
         # If all methods failed to find a price and we haven't tried the browser yet, retry
