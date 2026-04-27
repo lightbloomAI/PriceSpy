@@ -1028,14 +1028,17 @@ def extract_html_patterns(soup: BeautifulSoup, result: Dict) -> Dict:
         # ShopRenter main product price (e.g. edesalom.hu)
         ".product_table_price .price",  # ShopRenter main price
         "span.price.price_color.product_table_price",  # ShopRenter specific
-        # Amazon selectors (modern)
-        ".a-price .a-offscreen",  # Amazon current price (hidden for accessibility)
-        "#corePrice_feature_div .a-offscreen",  # Amazon core price
-        "#corePriceDisplay_desktop_feature_div .a-offscreen",  # Amazon desktop price
-        ".priceToPay .a-offscreen",  # Amazon price to pay
+        # Amazon selectors — variation-specific selectors FIRST so we don't
+        # accidentally grab a bundle/cross-sell price from a different ASIN
+        "#twister-plus-price-data-price",  # Hidden input with clean numeric for current variation
+        "#apex-pricetopay-accessibility-label",  # Aria label of the current price-to-pay
+        "#corePriceDisplay_desktop_feature_div .a-offscreen",  # Desktop core price
+        "#corePrice_feature_div .a-offscreen",  # Core price
         "#priceblock_ourprice",  # Amazon legacy
         "#priceblock_dealprice",  # Amazon deal price
         "#priceblock_saleprice",  # Amazon sale price
+        ".priceToPay .a-offscreen",  # Amazon price to pay
+        ".a-price .a-offscreen",  # Generic Amazon price (fallback — may match cross-sell)
         # Sportano
         ".c-price__price--discount",  # Sportano sale/discount price (not the --old one)
         ".c-price__price--normal:not(.c-price__price--old)",  # Sportano normal price (exclude old)
@@ -1077,11 +1080,12 @@ def extract_html_patterns(soup: BeautifulSoup, result: Dict) -> Dict:
         for selector in price_selectors:
             elem = soup.select_one(selector)
             if elem:
-                # Try content attribute first, then data attributes, then text
+                # Try content attribute first, then data attributes, then value, then text
                 price_text = (
                     elem.get("content") or
                     elem.get("data-product-price") or
                     elem.get("data-price") or
+                    elem.get("value") or
                     elem.get_text()
                 )
                 price = extract_price(price_text)
