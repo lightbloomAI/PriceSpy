@@ -158,6 +158,48 @@ async def scrape_with_browser(url: str) -> str:
     return html
 
 
+def is_product_unavailable(soup: BeautifulSoup, html: str) -> bool:
+    """Detect if a product page indicates the item is unavailable/out of stock."""
+    unavailable_phrases = [
+        "currently unavailable",
+        "derzeit nicht verfügbar",
+        "out of stock",
+        "nicht auf lager",
+        "sold out",
+        "no longer available",
+        "nicht mehr verfügbar",
+        "produkt nicht verfügbar",
+    ]
+
+    # Check Amazon #availability element specifically
+    avail_el = soup.select_one("#availability")
+    if avail_el:
+        avail_text = avail_el.get_text(strip=True).lower()
+        for phrase in unavailable_phrases:
+            if phrase in avail_text:
+                return True
+
+    # Check for common unavailability indicators in specific elements
+    for selector in ["#outOfStock", "#soldOut", ".out-of-stock", ".sold-out", "[data-availability='outofstock']"]:
+        if soup.select_one(selector):
+            return True
+
+    # Check JSON-LD availability
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            offers = data.get("offers", data.get("Offers", {}))
+            if isinstance(offers, list):
+                offers = offers[0] if offers else {}
+            availability = str(offers.get("availability", "")).lower()
+            if "outofstock" in availability or "discontinued" in availability:
+                return True
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    return False
+
+
 async def scrape_product_url(url: str) -> Dict[str, Any]:
     """
     Scrape a product URL and extract relevant information.
@@ -217,6 +259,12 @@ async def scrape_product_url(url: str) -> Dict[str, Any]:
                     raise Exception(f"Both HTTP and browser scraping failed: {browser_err}")
 
         soup = BeautifulSoup(html, "lxml")
+
+        # --- Availability check ---
+        # If the product is explicitly marked unavailable, return early with no price
+        if is_product_unavailable(soup, html):
+            result["error"] = "Product is currently unavailable"
+            return clean_result(result, url)
 
         # --- Extraction pipeline (priority order) ---
 

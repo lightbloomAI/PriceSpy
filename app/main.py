@@ -68,12 +68,14 @@ async def home(request: Request):
     """Home page - list all products."""
     products_list = await database.get_all_products()
 
-    # Enrich with latest prices and sources (only included sources)
+    # Enrich with latest prices and sources (only included + working sources)
     for product in products_list:
         latest_prices = await database.get_latest_prices(product["id"])
         excluded_sources = await database.get_excluded_sources(product["id"])
-        # Filter to only included sources
-        included_prices = [p for p in latest_prices if p["retailer"] not in excluded_sources]
+        source_statuses = await database.get_source_statuses(product["id"])
+        # Filter out excluded sources and sources whose last scrape failed
+        failed_sources = {r for r, s in source_statuses.items() if not s["success"]}
+        included_prices = [p for p in latest_prices if p["retailer"] not in excluded_sources and p["retailer"] not in failed_sources]
         if included_prices:
             product["lowest_price"] = included_prices[0]["price"]
             product["lowest_price_currency"] = included_prices[0].get("currency", "EUR")
