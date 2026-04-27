@@ -326,6 +326,13 @@ def search_google_shopping(
         # Try to extract direct retailer URL from Google redirect
         url = extract_direct_url(raw_url)
 
+        # Skip Amazon — anti-bot blocks our scraper from datacenter IPs and
+        # the Keepa API workaround is paywalled. Filter at source so we never
+        # add unscrapable rows to the DB.
+        retailer_lower = (retailer or "").lower()
+        url_lower = (url or "").lower()
+        if "amazon" in retailer_lower or "amazon." in url_lower:
+            continue
 
         # Skip items that don't match the search query
         if not matches_search_query(title, search_query):
