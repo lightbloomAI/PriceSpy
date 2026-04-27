@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
+from app.services import keepa
+
 # Sites that require browser rendering
 BROWSER_REQUIRED_DOMAINS = [
     'patagonia.com',
@@ -281,6 +283,24 @@ async def scrape_product_url(url: str) -> Dict[str, Any]:
         # Extract retailer from domain
         domain = urlparse(url).netloc.replace("www.", "")
         result["retailer"] = domain.split(".")[0].capitalize()
+
+        # For Amazon URLs, prefer the Keepa API. Datacenter IPs reliably
+        # get anti-bot stripped pages, so direct scraping returns no price
+        # (or worse, garbage from accessory listings). Keepa returns the
+        # current Amazon/Buy-Box price via API. If no API key is configured
+        # or the lookup fails, fall through to the browser scraper.
+        if keepa.is_amazon_url(url):
+            keepa_data = await keepa.fetch_amazon_product(url)
+            if keepa_data and keepa_data.get("price"):
+                result["price"] = keepa_data["price"]
+                result["currency"] = keepa_data["currency"]
+                if keepa_data.get("name"):
+                    result["name"] = keepa_data["name"]
+                if keepa_data.get("brand"):
+                    result["brand"] = keepa_data["brand"]
+                if keepa_data.get("images"):
+                    result["images"] = keepa_data["images"]
+                return clean_result(result, url)
 
         # Check if site requires browser rendering
         if needs_browser(url):

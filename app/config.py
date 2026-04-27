@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     auth_email: str = ""  # Seeded user email
     auth_password_hash: str = ""  # bcrypt hash of password
 
+    # Keepa (Amazon product API — used when datacenter IPs get anti-bot blocked)
+    keepa_api_key: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
